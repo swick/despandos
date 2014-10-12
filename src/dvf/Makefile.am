@@ -3,6 +3,12 @@
 LIBDVF_SOURCES = \
 	dvf_reader.c
 
-noinst_LIBRARIES = libdvf.a
-libdvf_a_SOURCES = $(LIBDVF_SOURCES)
+LIBDVF_LIBS =
+
+LIBDVF_CFLAGS =
+
+noinst_LTLIBRARIES = libdvf.la
+libdvf_la_SOURCES = $(LIBDVF_SOURCES)
+libdvf_la_LIBADD = $(LIBDVF_LIBS)
+libdvf_la_CFLAGS = $(LIBDVF_CFLAGS)
 

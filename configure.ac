@@ -6,6 +6,7 @@ AC_PROG_CC
 
 AC_PROG_RANLIB
 AM_PROG_AR
+LT_INIT
 
 AC_ARG_ENABLE([dvftool],
     [AS_HELP_STRING([--enable-dvftool],

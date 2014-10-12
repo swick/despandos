@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2014 Sebastian Wick <sebastian@sebastianwick.net>
  *
- * This file is part of despandos.
+ * This file is part of Despandos.
  *
  * Despandos is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,8 +55,6 @@
 
 #include <dvf_reader.h>
 
-#define __PACKED__ __attribute__ ((__packed__))
-
 #define DEBUG 1
 #if DEBUG
   #define DEBUG_LOG(...) do { fprintf(stdout,  __VA_ARGS__ ); } while(0)
@@ -65,6 +63,33 @@
   #define DEBUG_LOG(...)
   #define DEBUG_ERROR(...)
 #endif
+
+#define __SYM_EXPORT__ __attribute__ ((visibility ("default")))
+#define __PACKED__ __attribute__ ((__packed__))
+
+#define DVF_FILE_STRUCT_AT_OFFSET(FILE, STRUCT, OFFSET) \
+    (( OFFSET + sizeof(STRUCT) > file->size || offset < 0 ) ? \
+      0 : file->mapping + OFFSET )
+
+#define DVF_SPRITE_TYPE_AT_OFFSET(SPRITE, TYPE, OFFSET) \
+    (*((TYPE *)((char *)SPRITE + OFFSET)))
+
+struct dvf_frame {
+    struct dvf_file_object_animation_frame *frame;
+    struct dvf_file_sprite_header *sprite;
+};
+
+struct dvf_animation {
+    struct dvf_file_object_animation *animation;
+    unsigned int num_frames;
+    struct dvf_frame **frames;
+};
+
+struct dvf_object {
+    struct dvf_file_object *object;
+    unsigned int num_animations;
+    struct dvf_animation **animations;
+};
 
 /**
  * dvf file
@@ -79,34 +104,10 @@ struct dvf_file {
     void *mapping;
     /* read only fd */ 
     int fd;
-};
 
-/**
- * dvf sprite
- * - pixel format R8G8B8A8
- */
-struct dvf_sprite {
-    unsigned int width;
-    unsigned int height;
-    unsigned int size;
-    void *data;
-};
-
-/**
- *
- */
-struct dvf_object {
-    
-};
-
-/**
- *
- */
-struct dvf_container {
-    struct dvf_sprite *sprites;
-    unsigned int num_sprites;
-    struct dvf_object *objects;
+    /* objects lookup table */
     unsigned int num_objects;
+    struct dvf_object **objects;
 };
 
 /**
@@ -212,36 +213,529 @@ struct __PACKED__ dvf_file_object_animation_frame {
     uint16_t unknown5;
 };
 
+__SYM_EXPORT__ unsigned int
+dvf_file_num_objects(struct dvf_file *file)
+{
+    assert(file);
+    return file->num_objects;
+}
+
+__SYM_EXPORT__ struct dvf_object *
+dvf_file_get_object(struct dvf_file *file, unsigned int index)
+{
+    assert(index >= 0 && index < file->num_objects);
+    return file->objects[index];
+}
+
+/**
+ * returns a reference to the name of the object
+ * the reference becomes invalid when dvf_file_cleanup gets called
+ */
+__SYM_EXPORT__ const char *
+dvf_object_name(struct dvf_object *obj)
+{
+    return obj->object->name;
+}
+
+/**
+ * returns the number of perspectives the object can be displayed in
+ */
+__SYM_EXPORT__ unsigned int
+dvf_object_num_perspectives(struct dvf_object *obj)
+{
+    return obj->object->num_perspectives;
+}
+
+/**
+ * returns the number of perspectives the object can be displayed in
+ */
+__SYM_EXPORT__ void
+dvf_object_size(struct dvf_object *obj,
+                unsigned int *width,
+                unsigned int *height)
+{
+    *width = obj->object->max_width;
+    *height = obj->object->max_height;
+}
+
+__SYM_EXPORT__ unsigned int
+dvf_object_num_animations(struct dvf_object *obj)
+{
+    assert(obj);
+    return obj->num_animations;
+}
+
+__SYM_EXPORT__ struct dvf_animation *
+dvf_object_get_animation(struct dvf_object *obj, unsigned int index)
+{
+    assert(index >= 0 && index < obj->num_animations);
+    return obj->animations[index];
+}
+
+__SYM_EXPORT__ void
+dvf_animation_unknown(struct dvf_animation *anim,
+                      unsigned int *u0,
+                      unsigned int *u1,
+                      unsigned int *u2,
+                      unsigned int *u3)
+{
+    if(u0)
+        *u0 = anim->animation->unknown0;
+    if(u1)
+        *u1 = anim->animation->unknown1;
+    if(u2)
+        *u2 = anim->animation->unknown2;
+    if(u3)
+        *u3 = anim->animation->unknown3;
+}
+
+/**
+ * returns a reference to the name of the animation
+ * the reference becomes invalid when dvf_file_cleanup gets called
+ */
+__SYM_EXPORT__ unsigned int
+dvf_animation_id(struct dvf_animation *anim)
+{
+    return anim->animation->animation_id;
+}
+
+/**
+ * returns a reference to the name of the animation
+ */
+__SYM_EXPORT__ const char *
+dvf_animation_name(struct dvf_animation *anim)
+{
+    return anim->animation->name;
+}
+
+/**
+ * returns the perspective of the animation
+ */
+__SYM_EXPORT__ unsigned int
+dvf_animation_perspective(struct dvf_animation *anim)
+{
+    return anim->animation->perspective_id;
+}
+
+__SYM_EXPORT__ unsigned int
+dvf_animation_num_frames(struct dvf_animation *anim)
+{
+    assert(anim);
+    return anim->num_frames;
+}
+
+__SYM_EXPORT__ struct dvf_frame *
+dvf_animation_get_frame(struct dvf_animation *anim, unsigned int index)
+{
+    assert(index >= 0 && index < anim->num_frames);
+    return anim->frames[index];
+}
+
+__SYM_EXPORT__ void
+dvf_frame_unknown(struct dvf_frame *frame, 
+                     unsigned int *u0,
+                     unsigned int *u1,
+                     unsigned int *u2,
+                     unsigned int *u3,
+                     unsigned int *u4,
+                     unsigned int *u5)
+{
+    if(u0)
+        *u0 = frame->frame->unknown0;
+    if(u1)
+        *u1 = frame->frame->unknown1;
+    if(u2)
+        *u2 = frame->frame->unknown2;
+    if(u3)
+        *u3 = frame->frame->unknown3;
+    if(u4)
+        *u4 = frame->frame->unknown4;
+    if(u5)
+        *u5 = frame->frame->unknown5;
+}
+
+/**
+ * returns a B8G8R8A8 pixmap of the frame or NULL if an error occured
+ * the caller has to free the buffer
+ */
+__SYM_EXPORT__ void *
+dvf_frame_pixmap(struct dvf_frame *frame,
+                 unsigned int *width,
+                 unsigned int *height)
+{
+    struct dvf_file_sprite_header *sprite = frame->sprite;
+
+    uint8_t *image = malloc(le16toh(sprite->width) *
+                            le16toh(sprite->height) * 4);
+
+    if (!image)
+        return NULL;
+
+    unsigned int offset = sizeof(*sprite), i = 0, j = 0;
+    int16_t num_transparent_pixels;
+    int16_t num_total_pixels;
+    uint16_t color;
+
+    for(i=0; i<le16toh(sprite->height); i++) {
+        num_transparent_pixels = DVF_SPRITE_TYPE_AT_OFFSET(sprite,
+                                                           int16_t,
+                                                           offset);
+        offset += 2;
+        num_total_pixels = DVF_SPRITE_TYPE_AT_OFFSET(sprite,
+                                                     int16_t,
+                                                     offset) + 1;
+        offset += 2;
+
+        /* if num_total_pixels equals -1, the complete line is transparent */
+        if (num_total_pixels == -1) {
+            for (j=0; j<le16toh(sprite->width); j++) {
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 0] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 1] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 2] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 3] = 0;
+            }
+        }
+        else {
+            for (j=0; j<num_transparent_pixels; j++) {
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 0] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 1] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 2] = 0;
+                image[le16toh(sprite->width) * i * 4 + j * 4 + 3] = 0;
+            }
+            for (j=0; j < num_total_pixels - num_transparent_pixels; j++) {
+                color = DVF_SPRITE_TYPE_AT_OFFSET(sprite, uint16_t, offset);
+                offset += 2;
+                if (color == 0x1f) {
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 0] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 1] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 2] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 3] = 127;
+                } else if (color == 0x7C0) {
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 0] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 1] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 2] = 0;
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 3] = 0;
+                } else {
+                    int bits[4];
+                    bits[2] = ((color) % 16);
+                    bits[3] = ((color/0x10) % 16);
+                    bits[0] = ((color/0x100) % 16);
+                    bits[1] = ((color/0x1000) % 16);
+
+                    int colormap[3];
+                    colormap[0] = bits[0] > 7 ? 1 : 0;
+	                colormap[0] += bits[1] * 2;
+	                colormap[1] = (bits[0] % 8) * 8;
+	                colormap[1] += bits[3]/2;
+	                colormap[2] = bits[3] % 2 == 1 ? bits[2] + 16 : bits[2];
+	                colormap[0] = colormap[0] * 8 + (colormap[0]/4);
+	                colormap[1] = colormap[1] * 4 + (colormap[1]/16);
+	                colormap[2] = colormap[2] * 8 + (colormap[2]/4);
+
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 0] = colormap[2];
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 1] = colormap[1];
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 2] = colormap[0];
+                    image[le16toh(sprite->width) * i * 4 + num_transparent_pixels * 4 + j * 4 + 3] = 255;
+                }
+            }
+            for (j=0; j < le16toh(sprite->width) - num_total_pixels; j++) {
+                image[le16toh(sprite->width) * i * 4 + num_total_pixels * 4 + j * 4 + 0] = 0;
+                image[le16toh(sprite->width) * i * 4 + num_total_pixels * 4 + j * 4 + 1] = 0;
+                image[le16toh(sprite->width) * i * 4 + num_total_pixels * 4 + j * 4 + 2] = 0;
+                image[le16toh(sprite->width) * i * 4 + num_total_pixels * 4 + j * 4 + 3] = 0;
+            }
+        }
+    }
+
+    *width = le16toh(sprite->width);
+    *height = le16toh(sprite->height);
+
+    return image;
+}
+
+__SYM_EXPORT__ int
+dvf_file_init(struct dvf_file *file)
+{
+    int err = 0;
+    int i = 0, j = 0, k = 0;
+    unsigned long offset = 0;
+
+    assert(file && file->size > 0 && file->mapping != 0);
+
+    struct dvf_file_header *file_header =
+      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_header, 0);
+    if (!file_header) {
+        DEBUG_ERROR("file is malformed\n");
+        err = EILSEQ;
+        goto error;
+    }
+    offset += sizeof(*file_header);
+
+    if (le16toh(file_header->magic) != DVF_FILE_MAGIC) {
+        DEBUG_ERROR("file magic is %d, expected %d\n",
+                    le16toh(file_header->magic),
+                    DVF_FILE_MAGIC);
+        err = EILSEQ;
+        goto error;
+    }
+
+    struct dvf_file_sprites_header *sprites_header =
+      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_sprites_header, offset);
+    if (!file_header) {
+        DEBUG_ERROR("file is malformed\n");
+        err = EILSEQ;
+        goto error;
+    }
+    offset += sizeof(*sprites_header);
+
+    {
+    int num_sprites = le32toh(sprites_header->num_sprites);
+    struct dvf_file_sprite_header *sprites[num_sprites];
+
+    struct dvf_file_sprite_header *sprite = NULL;
+    for (i=0; i<le32toh(sprites_header->num_sprites); i++) {
+        sprite = DVF_FILE_STRUCT_AT_OFFSET(file,
+                                           struct dvf_file_sprite_header,
+                                           offset);
+        if (!sprite) {
+            DEBUG_ERROR("file is malformed\n");
+            err = EILSEQ;
+            goto error;
+        }
+        offset += sizeof(*sprite) + le32toh(sprite->size);
+
+        sprites[i] = sprite;
+    }
+
+    struct dvf_file_objects_header *objects_header =
+      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_objects_header, offset);
+    if (!objects_header) {
+        DEBUG_ERROR("file is malformed\n");
+        err = EILSEQ;
+        goto error;
+    }
+    offset += sizeof(*objects_header);
+
+    file->num_objects = le16toh(objects_header->num_objects);
+    file->objects = malloc(sizeof(*file->objects) * file->num_objects);
+    if (!file->objects) {
+        DEBUG_ERROR("out of memory\n");
+        err = ENOMEM;
+        goto error;
+    }
+    memset(file->objects, 0, sizeof(*file->objects));
+
+    struct dvf_file_object *object = NULL;
+    for (i=0; i<le16toh(objects_header->num_objects); i++) {
+        object = DVF_FILE_STRUCT_AT_OFFSET(file,
+                                           struct dvf_file_object,
+                                           offset);
+        if (!object) {
+            DEBUG_ERROR("file is malformed\n");
+            err = EILSEQ;
+            goto error;
+        }
+        offset += sizeof(*object);
+
+        struct dvf_object *obj = malloc(sizeof(*obj));
+        if (!obj) {
+            DEBUG_ERROR("out of memory\n");
+            err = ENOMEM;
+            goto error;
+        }
+        memset(obj, 0, sizeof(*obj));
+
+        file->objects[i] = obj;
+        obj->object = object;
+        obj->num_animations = le16toh(object->num_animations) *
+                              le16toh(object->num_perspectives);
+        obj->animations = malloc(sizeof(*obj->animations) *
+                                 obj->num_animations);
+        if (!obj->animations) {
+            DEBUG_ERROR("out of memory\n");
+            err = ENOMEM;
+            goto error;
+        }
+
+        DEBUG_LOG("Object %s\n", object->name);
+        DEBUG_LOG(" num_perspectives: %d\n", le16toh(object->num_perspectives));
+        DEBUG_LOG(" num_animations:   %d\n", le16toh(object->num_animations));
+        DEBUG_LOG(" width:            %d\n", le16toh(object->max_width));
+        DEBUG_LOG(" height:           %d\n", le16toh(object->max_height));
+        DEBUG_LOG(" unknown0:         %d\n", le32toh(object->unknown0));
+        DEBUG_LOG(" unknown1:         %d\n", le32toh(object->unknown0));
+
+        struct dvf_file_object_animation *animation = NULL;
+        for(j=0; j<le16toh(object->num_animations) * le16toh(object->num_perspectives); j++) {
+            animation = DVF_FILE_STRUCT_AT_OFFSET(
+                          file,
+                          struct dvf_file_object_animation,
+                          offset);
+            if (!animation) {
+                DEBUG_ERROR("file is malformed\n");
+                err = EILSEQ;
+                goto error;
+            }
+            offset += sizeof(*animation);
+
+            struct dvf_animation *anim = malloc(sizeof(*anim));
+            if (!anim) {
+                DEBUG_ERROR("out of memory\n");
+                err = ENOMEM;
+                goto error;
+            }
+            memset(anim, 0, sizeof(*anim));
+
+            obj->animations[j] = anim;
+            anim->animation = animation;
+            anim->num_frames = le16toh(animation->num_frames);
+            anim->frames = malloc(sizeof(*anim->frames) * anim->num_frames);
+            if (!anim->frames) {
+                DEBUG_ERROR("out of memory\n");
+                err = ENOMEM;
+                goto error;
+            }
+
+            DEBUG_LOG("  Animation %s\n", animation->name);
+            DEBUG_LOG("    num_frames:     %d\n", le16toh(animation->num_frames));
+            DEBUG_LOG("    perspective_id: %d\n", le16toh(animation->perspective_id));
+            DEBUG_LOG("    animation_id:   %d\n", le16toh(animation->animation_id));
+            DEBUG_LOG("    unknown0:       %d\n", le16toh(animation->unknown0));
+            DEBUG_LOG("    unknown1:       %d\n", le16toh(animation->unknown1));
+            DEBUG_LOG("    unknown2:       %d\n", le32toh(animation->unknown2));
+            DEBUG_LOG("    unknown3:       %d\n", le32toh(animation->unknown3));
+
+            struct dvf_file_object_animation_frame *frame = NULL;
+            for(k=0; k<le16toh(animation->num_frames); k++) {
+                frame = DVF_FILE_STRUCT_AT_OFFSET(
+                          file,
+                          struct dvf_file_object_animation_frame,
+                          offset);
+                if (!frame) {
+                    DEBUG_ERROR("file is malformed\n");
+                    err = EILSEQ;
+                    goto error;
+                }
+                offset += sizeof(*frame);
+
+                struct dvf_frame *dvf_frame = malloc(sizeof(*dvf_frame));
+                if (!dvf_frame) {
+                    DEBUG_ERROR("out of memory\n");
+                    err = ENOMEM;
+                    goto error;
+                }
+                memset(dvf_frame, 0, sizeof(*dvf_frame));
+
+                anim->frames[k] = dvf_frame;
+                dvf_frame->frame = frame;
+                if (le16toh(frame->sprite_id) >= num_sprites ||
+                    le16toh(frame->sprite_id) < 0)
+                {
+                    DEBUG_ERROR("file is malformed\n");
+                    err = EILSEQ;
+                    goto error;
+                }
+                dvf_frame->sprite = sprites[le16toh(frame->sprite_id)];
+
+                DEBUG_LOG("    frame %d\n", k);
+                DEBUG_LOG("      sprite_id: %d\n", le16toh(frame->sprite_id));
+                DEBUG_LOG("      unknown0:  %d\n", le16toh(frame->unknown0));
+                DEBUG_LOG("      unknown1:  %d\n", le16toh(frame->unknown1));
+                DEBUG_LOG("      unknown2:  %d\n", le16toh(frame->unknown2));
+                DEBUG_LOG("      unknown3:  %d\n", le16toh(frame->unknown3));
+                DEBUG_LOG("      unknown4:  %d\n", le16toh(frame->unknown4));
+                DEBUG_LOG("      unknown5:  %d\n", le16toh(frame->unknown5));
+            }
+        }
+    }
+    }
+
+    return 0;
+
+error:
+    dvf_file_cleanup(file);
+    return err;
+}
+
+__SYM_EXPORT__ int
+dvf_file_cleanup(struct dvf_file *file)
+{
+    if (!file || !file->objects)
+        return 0;
+
+    int i = 0, j = 0, k = 0;
+
+    struct dvf_object *object;
+    struct dvf_animation *animation;
+    struct dvf_frame *frame;
+
+    for (i=0; i < file->num_objects; i++) {
+        object = file->objects[i];
+        if (!object)
+            break;
+
+        for (j=0; j < object->num_animations; j++) {
+            animation = object->animations[j];
+            if (!animation)
+                break;
+
+            for (k=0; k < animation->num_frames; k++) {
+                frame = animation->frames[k];
+                if (!frame)
+                    break;
+
+                free(frame);
+            }
+
+            free(animation->frames);
+            free(animation);
+        }
+
+        free(object->animations);
+        free(object);
+    }
+
+    free(file->objects);
+}
+
 /**
  * open a dvf file
  * 
  * returns a struct dvf_file on success, otherwise NULL and err gets set
  */
-struct dvf_file *
-dvf_file_open(char *file_name, int *err)
+__SYM_EXPORT__ struct dvf_file *
+dvf_file_open(char *file_name, int *err_out)
 {
-    *err = 0;
+    int err = 0;
+
     struct dvf_file *file = malloc(sizeof(*file));
     if (!file) {
         DEBUG_ERROR("out of memory\n");
-        *err = ENOMEM;
-        return NULL;
+        err = ENOMEM;
+        goto error;
     }
     memset(file, 0, sizeof(*file));
+
+    file->name = strdup(file_name);
+    if (!file->name) {
+        DEBUG_ERROR("out of memory\n");
+        err = ENOMEM;
+        goto error;
+    }
 
     file->fd = open(file_name, O_RDONLY);
     if (file->fd < 0) {
         DEBUG_ERROR("open failed: %s (%d)\n", strerror(errno), errno);
-        *err = errno;
-        return NULL;
+        err = errno;
+        goto error;
     }
 
     struct stat file_stat;
     if (fstat(file->fd, &file_stat) < 0) {
         DEBUG_ERROR("fstat failed: %s (%d)\n", strerror(errno), errno);
         close(file->fd);
-        *err = errno;
-        return NULL;
+        err = errno;
+        goto error;
     }
 
     file->size = file_stat.st_size;
@@ -255,18 +749,16 @@ dvf_file_open(char *file_name, int *err)
     if (file->mapping == MAP_FAILED) {
         DEBUG_ERROR("mmaped failed: %s (%d)\n", strerror(errno), errno);
         close(file->fd);
-        *err = errno;
-        return NULL;
-    }
-
-    file->name = strdup(file_name);
-    if (!file->name) {
-        DEBUG_ERROR("out of memory\n");
-        *err = ENOMEM;
-        return NULL;
+        err = errno;
+        goto error;
     }
 
     return file;
+
+error:
+    dvf_file_close(file);
+    *err_out = err;
+    return NULL;
 }
 
 /**
@@ -275,146 +767,26 @@ dvf_file_open(char *file_name, int *err)
  *
  * returns 0 on success
  */
-int
+__SYM_EXPORT__ int
 dvf_file_close(struct dvf_file *file)
 {
-    assert(file &&
-           file->name && 
-           file->mapping != MAP_FAILED &&
-           file->fd >= 0 &&
-           file->size > 0);
+    if (!file)
+        return 0;
 
-    munmap(file->mapping, file->size);
-    close(file->fd);
-    free(file->name);
+    if (file->name)
+        free(file->name);
+
+    if (file->mapping) {
+        assert(file->size > 0);
+        munmap(file->mapping, file->size);
+    }
+
+    if(file->fd > 0)
+        close(file->fd);
+
     free(file);
 
     return 0;
 }
 
-/**
- * create a dvf container from a file
- * 
- * returns a struct dvf_container on success, otherwise NULL and err gets set
- *
- * FIXME
- *   1. broken or invalid files should not raise a segfault
- *       -> check the mapping boundaries
- */
-struct dvf_container *
-dvf_container_create(struct dvf_file *file, int *err)
-{
-    *err = 0;
-    int i = 0, j = 0, k = 0;
-    unsigned long offset = 0;
-
-    struct dvf_container *container = malloc(sizeof(*container));
-    if (!container) {
-        DEBUG_ERROR("out of memory\n");
-        *err = ENOMEM;
-        goto error;
-    }
-    memset(container, 0, sizeof(*container));
-
-    struct dvf_file_header *file_header = file->mapping;
-    offset += sizeof(*file_header);
-    if (le16toh(file_header->magic) != DVF_FILE_MAGIC) {
-        DEBUG_ERROR("file magic is %d, expected %d\n",
-                    le16toh(file_header->magic),
-                    DVF_FILE_MAGIC);
-        *err = EILSEQ;
-        goto error;
-    }
-
-    struct dvf_file_sprites_header *sprites_header = file->mapping + offset;
-    offset += sizeof(*sprites_header);
-    container->num_sprites = sprites_header->num_sprites;
-    container->sprites = malloc(sizeof(*container->sprites) *
-                         le32toh(sprites_header->num_sprites));
-    if (!container->sprites) {
-        DEBUG_ERROR("out of memory\n");
-        *err = ENOMEM;
-        goto error;
-    }
-
-    struct dvf_file_sprite_header *sprite = NULL;
-    for (i=0; i<le32toh(sprites_header->num_sprites); i++) {
-        sprite = file->mapping + offset;
-        offset += sizeof(*sprite) + le32toh(sprite->size);
-
-        //container->sprites[i] = dvf_sprite_create();
-    }
-
-    struct dvf_file_objects_header *objects_header = file->mapping + offset;
-    offset += sizeof(*objects_header);
-
-    struct dvf_file_object *object = NULL;
-    for (i=0; i<le16toh(objects_header->num_objects); i++) {
-        object = file->mapping + offset;
-        offset += sizeof(*object);
-
-        DEBUG_LOG("Object %s\n", object->name);
-        DEBUG_LOG(" num_perspectives: %d\n", le16toh(object->num_perspectives));
-        DEBUG_LOG(" num_animations:   %d\n", le16toh(object->num_animations));
-        DEBUG_LOG(" width:            %d\n", le16toh(object->max_width));
-        DEBUG_LOG(" height:           %d\n", le16toh(object->max_height));
-        DEBUG_LOG(" unknown0:         %d\n", le32toh(object->unknown0));
-        DEBUG_LOG(" unknown1:         %d\n", le32toh(object->unknown0));
-
-        struct dvf_file_object_animation *animation = NULL;
-        for(j=0; j<le16toh(object->num_animations) * le16toh(object->num_perspectives); j++) {
-            animation = file->mapping + offset;
-            offset += sizeof(*animation);
-
-            DEBUG_LOG("  Animation %s\n", animation->name);
-            DEBUG_LOG("    num_frames:     %d\n", le16toh(animation->num_frames));
-            DEBUG_LOG("    perspective_id: %d\n", le16toh(animation->perspective_id));
-            DEBUG_LOG("    animation_id:   %d\n", le16toh(animation->animation_id));
-            DEBUG_LOG("    unknown0:       %d\n", le16toh(animation->unknown0));
-            DEBUG_LOG("    unknown1:       %d\n", le16toh(animation->unknown1));
-            DEBUG_LOG("    unknown2:       %d\n", le32toh(animation->unknown2));
-            DEBUG_LOG("    unknown3:       %d\n", le32toh(animation->unknown3));
-
-            struct dvf_file_object_animation_frame *frame = NULL;
-            for(k=0; k<le16toh(animation->num_frames); k++) {
-                frame = file->mapping + offset;
-                offset += sizeof(*frame);
-
-                DEBUG_LOG("    frame %d\n", k);
-                DEBUG_LOG("      sprite_id: %d\n", le16toh(frame->sprite_id));
-                DEBUG_LOG("      unknown0:  %d\n", le16toh(frame->unknown0));
-                DEBUG_LOG("      unknown1:  %d\n", le16toh(frame->unknown1));
-                DEBUG_LOG("      unknown2:  %d\n", le16toh(frame->unknown2));
-                DEBUG_LOG("      unknown3:  %d\n", le16toh(frame->unknown3));
-                DEBUG_LOG("      unknown4:  %d\n", le16toh(frame->unknown4));
-                DEBUG_LOG("      unknown5:  %d\n", le16toh(frame->unknown5));
-            }
-        }
-    }
-
-    return container;
-
-error:
-    if (container)
-        dvf_container_destroy(container);
-
-    return NULL;
-}
-
-/**
- * destroys a dvf container
- * 
- * returns 0 on success
- */
-int
-dvf_container_destroy(struct dvf_container *container)
-{
-    if (!container)
-        return 0;
-    if (container->sprites)
-        free(container->sprites);
-    free(container);
-
-    return 0;
-}
 

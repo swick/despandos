@@ -1,6 +1,5 @@
-#
 
-SUBDIRS = 
+SUBDIRS =
 
 if HAVE_DVFTOOL
 SUBDIRS += src/dvf \
