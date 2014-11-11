@@ -21,7 +21,7 @@
 #include <errno.h>
 #include <SDL.h>
 
-#include "dvf_reader.h"
+#include "dvf.h"
 
 int
 main(int argc, char **argv)

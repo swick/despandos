@@ -4,12 +4,12 @@ DVFTOOL_SOURCES = \
 	dvftool.c
 
 DVFTOOL_LIBS = \
-	$(top_builddir)/src/dvf/libdvf.la\
-    -L/usr/lib/x86_64-linux-gnu -lSDL2
+	$(top_builddir)/src/file/libdvf_file.la \
+	$(SDL2_LIBS)
 
 DVFTOOL_CFLAGS = \
-	-I$(top_srcdir)/src/dvf \
-	-I/usr/include/SDL2 -D_REENTRANT
+	-I$(top_srcdir)/src/file \
+	$(SDL2_CFLAGS)
 
 bin_PROGRAMS = dvftool
 dvftool_SOURCES = $(DVFTOOL_SOURCES)

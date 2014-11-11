@@ -17,8 +17,8 @@
  * along with Despandos.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __DVF_READER_H__
-#define __DVF_READER_H__
+#ifndef __DVF_FILE_H__
+#define __DVF_FILE_H__
 
 struct dvf_file;
 struct dvf_object;
@@ -97,4 +97,4 @@ dvf_frame_pixmap(struct dvf_frame *frame,
                  unsigned int *width,
                  unsigned int *height);
 
-#endif /* __DVF_READER_H__ */
+#endif /* __DVF_FILE_H__ */

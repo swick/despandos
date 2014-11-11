@@ -47,13 +47,12 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/mman.h>
 #include <assert.h>
 #include <stdint.h>
 #include <endian.h>
 
-#include <dvf_reader.h>
+#include "file.h"
+#include "dvf.h"
 
 #define DEBUG 1
 #if DEBUG
@@ -66,10 +65,6 @@
 
 #define __SYM_EXPORT__ __attribute__ ((visibility ("default")))
 #define __PACKED__ __attribute__ ((__packed__))
-
-#define DVF_FILE_STRUCT_AT_OFFSET(FILE, STRUCT, OFFSET) \
-    (( OFFSET + sizeof(STRUCT) > file->size || offset < 0 ) ? \
-      0 : file->mapping + OFFSET )
 
 #define DVF_SPRITE_TYPE_AT_OFFSET(SPRITE, TYPE, OFFSET) \
     (*((TYPE *)((char *)SPRITE + OFFSET)))
@@ -96,15 +91,8 @@ struct dvf_object {
  * read only
  */
 struct dvf_file {
-    /* file name */
-    char *name;
-    /* file size */
-    off_t size;
-    /* read only mmap mapping of the file */
-    void *mapping;
-    /* read only fd */ 
-    int fd;
-
+    /* */
+    struct mmap_file *file;
     /* objects lookup table */
     unsigned int num_objects;
     struct dvf_object **objects;
@@ -460,10 +448,8 @@ dvf_file_init(struct dvf_file *file)
     int i = 0, j = 0, k = 0;
     unsigned long offset = 0;
 
-    assert(file && file->size > 0 && file->mapping != 0);
-
     struct dvf_file_header *file_header =
-      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_header, 0);
+      mmap_file_ptr_offset(file->file, 0, sizeof(*file_header));
     if (!file_header) {
         DEBUG_ERROR("file is malformed\n");
         err = EILSEQ;
@@ -480,7 +466,7 @@ dvf_file_init(struct dvf_file *file)
     }
 
     struct dvf_file_sprites_header *sprites_header =
-      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_sprites_header, offset);
+      mmap_file_ptr_offset(file->file, offset, sizeof(*sprites_header));
     if (!file_header) {
         DEBUG_ERROR("file is malformed\n");
         err = EILSEQ;
@@ -494,9 +480,7 @@ dvf_file_init(struct dvf_file *file)
 
     struct dvf_file_sprite_header *sprite = NULL;
     for (i=0; i<le32toh(sprites_header->num_sprites); i++) {
-        sprite = DVF_FILE_STRUCT_AT_OFFSET(file,
-                                           struct dvf_file_sprite_header,
-                                           offset);
+        sprite = mmap_file_ptr_offset(file->file, offset, sizeof(*sprite));
         if (!sprite) {
             DEBUG_ERROR("file is malformed\n");
             err = EILSEQ;
@@ -508,7 +492,7 @@ dvf_file_init(struct dvf_file *file)
     }
 
     struct dvf_file_objects_header *objects_header =
-      DVF_FILE_STRUCT_AT_OFFSET(file, struct dvf_file_objects_header, offset);
+      mmap_file_ptr_offset(file->file, offset, sizeof(*objects_header));
     if (!objects_header) {
         DEBUG_ERROR("file is malformed\n");
         err = EILSEQ;
@@ -527,9 +511,7 @@ dvf_file_init(struct dvf_file *file)
 
     struct dvf_file_object *object = NULL;
     for (i=0; i<le16toh(objects_header->num_objects); i++) {
-        object = DVF_FILE_STRUCT_AT_OFFSET(file,
-                                           struct dvf_file_object,
-                                           offset);
+        object = mmap_file_ptr_offset(file->file, offset, sizeof(*object));
         if (!object) {
             DEBUG_ERROR("file is malformed\n");
             err = EILSEQ;
@@ -567,10 +549,9 @@ dvf_file_init(struct dvf_file *file)
 
         struct dvf_file_object_animation *animation = NULL;
         for(j=0; j<le16toh(object->num_animations) * le16toh(object->num_perspectives); j++) {
-            animation = DVF_FILE_STRUCT_AT_OFFSET(
-                          file,
-                          struct dvf_file_object_animation,
-                          offset);
+            animation = mmap_file_ptr_offset(file->file,
+                                             offset,
+                                             sizeof(*animation));
             if (!animation) {
                 DEBUG_ERROR("file is malformed\n");
                 err = EILSEQ;
@@ -607,10 +588,9 @@ dvf_file_init(struct dvf_file *file)
 
             struct dvf_file_object_animation_frame *frame = NULL;
             for(k=0; k<le16toh(animation->num_frames); k++) {
-                frame = DVF_FILE_STRUCT_AT_OFFSET(
-                          file,
-                          struct dvf_file_object_animation_frame,
-                          offset);
+                frame = mmap_file_ptr_offset(file->file,
+                                             offset,
+                                             sizeof(*frame));
                 if (!frame) {
                     DEBUG_ERROR("file is malformed\n");
                     err = EILSEQ;
@@ -707,7 +687,6 @@ __SYM_EXPORT__ struct dvf_file *
 dvf_file_open(char *file_name, int *err_out)
 {
     int err = 0;
-
     struct dvf_file *file = malloc(sizeof(*file));
     if (!file) {
         DEBUG_ERROR("out of memory\n");
@@ -716,48 +695,22 @@ dvf_file_open(char *file_name, int *err_out)
     }
     memset(file, 0, sizeof(*file));
 
-    file->name = strdup(file_name);
-    if (!file->name) {
-        DEBUG_ERROR("out of memory\n");
-        err = ENOMEM;
-        goto error;
-    }
-
-    file->fd = open(file_name, O_RDONLY);
-    if (file->fd < 0) {
-        DEBUG_ERROR("open failed: %s (%d)\n", strerror(errno), errno);
-        err = errno;
-        goto error;
-    }
-
-    struct stat file_stat;
-    if (fstat(file->fd, &file_stat) < 0) {
-        DEBUG_ERROR("fstat failed: %s (%d)\n", strerror(errno), errno);
-        close(file->fd);
-        err = errno;
-        goto error;
-    }
-
-    file->size = file_stat.st_size;
-    file->mapping = mmap(NULL,
-                         file_stat.st_size,
-                         PROT_READ,
-                         MAP_PRIVATE,
-                         file->fd,
-                         0);
-
-    if (file->mapping == MAP_FAILED) {
-        DEBUG_ERROR("mmaped failed: %s (%d)\n", strerror(errno), errno);
-        close(file->fd);
-        err = errno;
+    file->file = mmap_file_open(file_name, &err);
+    if (!file->file) {
+        DEBUG_ERROR("cannot open file %s: %s (%d)\n",
+                    file_name,
+                    strerror(err),
+                    err);
         goto error;
     }
 
     return file;
 
 error:
-    dvf_file_close(file);
-    *err_out = err;
+    if (file)
+        dvf_file_close(file);
+    if (err_out)
+        *err_out = err;
     return NULL;
 }
 
@@ -773,16 +726,8 @@ dvf_file_close(struct dvf_file *file)
     if (!file)
         return 0;
 
-    if (file->name)
-        free(file->name);
-
-    if (file->mapping) {
-        assert(file->size > 0);
-        munmap(file->mapping, file->size);
-    }
-
-    if(file->fd > 0)
-        close(file->fd);
+    if (file->file)
+        mmap_file_close(file->file);
 
     free(file);
 
